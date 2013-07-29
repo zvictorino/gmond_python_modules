@@ -84,7 +84,7 @@ def hexlongish(x):
 	else:
 		raise ValueError
 
-def parse_innodb_status(innodb_status_raw, innodb_version="1.0"):
+def parse_innodb_status(innodb_status_raw, innodb_version=1.0):
 	def sumof(status):
 		def new(*idxs):
 			return sum(map(lambda x: longish(status[x]), idxs))
