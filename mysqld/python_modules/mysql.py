@@ -125,7 +125,7 @@ def update_stats(get_innodb=True, get_master=True, get_slave=True):
 		
 		if row[0] == "ACTIVE":
 			have_innodb = True
-			innodb_version = row[1]
+			innodb_version = float(row[1])
 		cursor.close()
 
 		# try not to fail ?
