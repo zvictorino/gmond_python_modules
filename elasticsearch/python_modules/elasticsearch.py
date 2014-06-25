@@ -6,17 +6,16 @@ try:
 except ImportError:
     import json
 
+import logging
 import time
 import urllib
 from functools import partial
 
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s\t Thread-%(thread)d - %(message)s", filename='/tmp/elasticsearch.log', filemode='w')
+logging.debug('starting up')
 
 # short name to full path for stats
 keyToPath = dict()
-
-# Initial time modification stamp - Used to determine
-# when JSON is updated
-last_update = time.time()
 
 # INDICES METRICS #
 
@@ -42,8 +41,7 @@ keyToPath['es_get_exists_time'] = "nodes.%s.indices.get.exists_time_in_millis"
 keyToPath['es_get_exists_total'] = "nodes.%s.indices.get.exists_total"
 keyToPath['es_get_time'] = "nodes.%s.indices.get.time_in_millis"
 keyToPath['es_get_total'] = "nodes.%s.indices.get.total"
-keyToPath[
-    'es_get_missing_time'] = "nodes.%s.indices.get.missing_time_in_millis"
+keyToPath['es_get_missing_time'] = "nodes.%s.indices.get.missing_time_in_millis"
 keyToPath['es_get_missing_total'] = "nodes.%s.indices.get.missing_total"
 
 ## INDEXING
@@ -120,16 +118,8 @@ def dig_it_up(obj, path):
 
 
 def update_result(result, url):
-    global last_update
-
-    # If time delta is > 20 seconds, then update the JSON results
-    now = time.time()
-    diff = now - last_update
-    if diff > 20:
-        print '[elasticsearch] ' + str(diff) + ' seconds passed - Fetching ' + url
-        result = json.load(urllib.urlopen(url, None, 2))
-        last_update = now
-
+    logging.debug('[elasticsearch] Fetching ' + url)
+    result = json.load(urllib.urlopen(url))
     return result
 
 
@@ -191,15 +181,16 @@ def get_indices_descriptors(index, skel, result, url):
 def metric_init(params):
     descriptors = []
 
-    print('[elasticsearch] Received the following parameters')
-    print(params)
+    logging.debug('[elasticsearch] Received the following parameters')
+    logging.debug(params)
 
     host = params.get('host', 'http://localhost:9200/')
     url_cluster = '{0}_nodes/_local/stats?all=true'.format(host)
+    print url_cluster
 
     # First iteration - Grab statistics
-    print('[elasticsearch] Fetching ' + url_cluster)
-    result = json.load(urllib.urlopen(url_cluster, None, 2))
+    logging.debug('[elasticsearch] Fetching ' + url_cluster)
+    result = json.load(urllib.urlopen(url_cluster))
 
     metric_group = params.get('metric_group', 'elasticsearch')
 
@@ -218,9 +209,9 @@ def metric_init(params):
     indices = params.get('indices', '*').split()
     for index in indices:
         url_indices = '{0}{1}/_stats'.format(host, index)
-        print('[elasticsearch] Fetching ' + url_indices)
+        logging.debug('[elasticsearch] Fetching ' + url_indices)
 
-        r_indices = json.load(urllib.urlopen(url_indices, None, 2))
+        r_indices = json.load(urllib.urlopen(url_indices))
         descriptors += get_indices_descriptors(index,
                                                Desc_Skel,
                                                r_indices,
@@ -228,6 +219,7 @@ def metric_init(params):
 
     _create_desc = partial(create_desc, Desc_Skel)
 
+    #JVM
     descriptors.append(
         _create_desc({
             'name': 'es_heap_committed',
@@ -268,6 +260,7 @@ def metric_init(params):
         })
     )
 
+    ## THREADS
     descriptors.append(
         _create_desc({
             'name': 'es_threads',
@@ -286,6 +279,7 @@ def metric_init(params):
         })
     )
 
+    ## GC
     descriptors.append(
         _create_desc({
             'name': 'es_gc_time',
@@ -295,7 +289,17 @@ def metric_init(params):
             'description': 'Java GC Time (ms)'
         })
     )
+ 
+    descriptors.append(
+        _create_desc({
+            'name': 'es_gc_count',
+            'format': '%d',
+            'slope': 'positive',
+            'description': 'Java GC Count',
+        })
+    )
 
+    # TRANSPORT #
     descriptors.append(
         _create_desc({
             'name': 'es_transport_open',
@@ -346,6 +350,7 @@ def metric_init(params):
         })
     )
 
+    # HTTP #
     descriptors.append(
         _create_desc({
             'name': 'es_http_current_open',
@@ -374,15 +379,7 @@ def metric_init(params):
         })
     )
 
-    descriptors.append(
-        _create_desc({
-            'name': 'es_gc_count',
-            'format': '%d',
-            'slope': 'positive',
-            'description': 'Java GC Count',
-        })
-    )
-
+    ## MERGE 
     descriptors.append(
         _create_desc({
             'name': 'es_merges_current',
@@ -446,7 +443,8 @@ def metric_init(params):
             'description': 'Merges Time (ms)'
         })
     )
-
+    
+    ## REFRESH
     descriptors.append(
         _create_desc({
             'name': 'es_refresh_total',
@@ -467,6 +465,7 @@ def metric_init(params):
         })
     )
 
+    ## DOCS
     descriptors.append(
         _create_desc({
             'name': 'es_docs_count',
@@ -487,6 +486,7 @@ def metric_init(params):
         })
     )
 
+    # OPEN FILE DESCRIPTORS
     descriptors.append(
         _create_desc({
             'name': 'es_open_file_descriptors',
@@ -496,6 +496,7 @@ def metric_init(params):
         })
     )
 
+    ## CACHE
     descriptors.append(
         _create_desc({
             'name': 'es_cache_field_eviction',
@@ -543,12 +544,23 @@ def metric_init(params):
         })
     )
 
+    ## SEARCH
     descriptors.append(
         _create_desc({
             'name': 'es_query_current',
             'units': 'Queries',
             'format': '%d',
             'description': 'Current Queries',
+        })
+    )
+
+    descriptors.append(
+        _create_desc({
+            'name': 'es_query_total',
+            'units': 'Queries',
+            'format': '%d',
+            'slope': 'positive',
+            'description': 'Total Queries'
         })
     )
 
@@ -610,6 +622,7 @@ def metric_init(params):
         })
     )
 
+    ## GET
     descriptors.append(
         _create_desc({
             'name': 'es_get_exists_time',
@@ -667,6 +680,7 @@ def metric_init(params):
         })
     )
 
+    ## INDEXING
     descriptors.append(
         _create_desc({
             'name': 'es_indexing_delete_time',
@@ -707,15 +721,6 @@ def metric_init(params):
         })
     )
 
-    descriptors.append(
-        _create_desc({
-            'name': 'es_query_total',
-            'units': 'Queries',
-            'format': '%d',
-            'slope': 'positive',
-            'description': 'Total Queries'
-        })
-    )
     return descriptors
 
 
@@ -728,4 +733,4 @@ if __name__ == '__main__':
     descriptors = metric_init({})
     for d in descriptors:
         v = d['call_back'](d['name'])
-        print 'value for %s is %s' % (d['name'], str(v))
+        logging.debug('value for %s is %s' % (d['name'], str(v)))
