@@ -195,7 +195,7 @@ def metric_init(params):
     print(params)
 
     host = params.get('host', 'http://localhost:9200/')
-    url_cluster = '{0}_cluster/nodes/_local/stats?all=true'.format(host)
+    url_cluster = '{0}_nodes/_local/stats?all=true'.format(host)
 
     # First iteration - Grab statistics
     print('[elasticsearch] Fetching ' + url_cluster)
